@@ -39,6 +39,7 @@ import LinkTool, { DefaultLinkToolRender } from "@yoopta/link-tool";
 
 import { uploadImageToServer } from "../utils/serverImageUpload";
 import { useClipboardPaste } from "../hooks/useClipboardPaste";
+import { useDragAndDrop } from "../hooks/useDragAndDrop";
 import { useMemo, useRef, useState, useCallback, useEffect } from "react";
 import { CustomEditor, ImageProps } from "../types/editor";
 import { WITH_BASIC_INIT_VALUE } from "./initValue";
@@ -218,7 +219,14 @@ function WithBaseFullSetup() {
     onImagePaste: insertImage,
   });
 
-  console.log("Clipboard paste hook initialized");
+  // Use our custom drag and drop hook with the insertImage function
+  const dropRef = useDragAndDrop({
+    editor,
+    uploadImage: handleImageUpload,
+    onImageDrop: insertImage,
+  });
+
+  console.log("Clipboard paste and drag-drop hooks initialized");
 
   const onChange = (
     newValue: YooptaContentValue,
@@ -226,7 +234,7 @@ function WithBaseFullSetup() {
   ) => {
     console.log("onChange", JSON.stringify(options));
     const lastOperation = options.operations[options.operations.length - 1];
-    console.log("Last operation:");
+    console.log("Last operation:", lastOperation);
     if (
       lastOperation.type === "insert_block" ||
       lastOperation.type === "set_block_value"
@@ -250,7 +258,67 @@ function WithBaseFullSetup() {
       className="md:py-[100px] md:pl-[200px] md:pr-[80px] px-[20px] pt-[80px] pb-[40px] flex justify-center"
       ref={selectionRef}
     >
-      <div ref={pasteRef}>
+      <div
+        ref={(el) => {
+          // 두 ref를 동일한 요소에 설정
+          if (el) {
+            // @ts-ignore - 직접 ref 객체의 current 속성 설정
+            if (pasteRef && typeof pasteRef === "object") pasteRef.current = el;
+            // @ts-ignore
+            if (dropRef && typeof dropRef === "object") dropRef.current = el;
+          }
+        }}
+        className="drag-drop-zone w-full h-full"
+        style={{
+          position: "relative",
+          minHeight: "300px",
+          border: "1px solid transparent", // 드롭 영역을 명확히 하기 위한 투명 테두리
+        }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          e.currentTarget.classList.add("drag-over");
+        }}
+        onDragLeave={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          e.currentTarget.classList.remove("drag-over");
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          e.currentTarget.classList.remove("drag-over");
+
+          // 드롭된 파일 처리
+          if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+            const file = e.dataTransfer.files[0];
+
+            if (file.type.startsWith("image/")) {
+              handleImageUpload(file)
+                .then((imageData) => {
+                  insertImage({
+                    src: imageData.secure_url,
+                    alt: `Dropped image: ${file.name}`,
+                    sizes: {
+                      width: imageData.width || 800,
+                      height: imageData.height || 600,
+                    },
+                  });
+                })
+                .catch((err) => {
+                  console.error("Error processing dropped image:", err);
+                });
+            }
+          }
+        }}
+      >
+        <style jsx global>{`
+          .drag-drop-zone.drag-over {
+            background-color: rgba(0, 122, 255, 0.1);
+            border: 2px dashed #007aff !important;
+            border-radius: 4px;
+          }
+        `}</style>
         <YooptaEditor
           editor={editor}
           plugins={plugins as any[]}
