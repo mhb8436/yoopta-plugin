@@ -136,6 +136,8 @@ const MARKS = [Bold, Italic, CodeMark, Underline, Strike, Highlight];
 function WithBaseFullSetup() {
   const [value, setValue] = useState(WITH_BASIC_INIT_VALUE);
   const editor = useMemo(() => createYooptaEditor(), []);
+  const [currentBlockId, setCurrentBlockId] = useState<string | null>(null);
+  const [currentOrder, setCurrentOrder] = useState<number | null>(null);
 
   // Create a function to insert an image into the editor
   const insertImage = useCallback(
@@ -147,12 +149,13 @@ function WithBaseFullSetup() {
         // let's create and insert the image block manually
 
         // Create a new block ID
-        const blockId = crypto.randomUUID();
+        const blockId = currentBlockId || crypto.randomUUID();
         const imageId = crypto.randomUUID();
 
         // Create a new blocks object with the current state
         const currentBlocks = { ...value };
 
+        const blockOrder = currentOrder || Object.keys(currentBlocks).length;
         // Create the image block with the proper structure
         currentBlocks[blockId] = {
           id: blockId,
@@ -170,7 +173,7 @@ function WithBaseFullSetup() {
               },
             },
           ],
-          meta: { order: Object.keys(currentBlocks).length, depth: 0 },
+          meta: { order: blockOrder, depth: 0 },
         };
 
         console.log("Current blocks:", currentBlocks);
@@ -203,7 +206,7 @@ function WithBaseFullSetup() {
       // Upload the image to the server
       return await uploadImageToServer(file);
     } catch (error) {
-      console.error('Error uploading image to server:', error);
+      console.error("Error uploading image to server:", error);
       throw error;
     }
   }, []);
@@ -217,147 +220,28 @@ function WithBaseFullSetup() {
 
   console.log("Clipboard paste hook initialized");
 
-  // Add a direct paste handler to the editor element as a backup
-  useEffect(() => {
-    // Wait for the editor to be fully mounted
-    setTimeout(() => {
-      const editorElement = document.querySelector(".yoopta-editor");
-      if (!editorElement) {
-        console.log("Direct paste handler: Editor element not found");
-        return;
-      }
-
-      console.log(
-        "Direct paste handler: Adding paste event listener to editor element"
-      );
-
-      const handleDirectPaste = async (e: Event) => {
-        // Cast to ClipboardEvent
-        const clipboardEvent = e as ClipboardEvent;
-        console.log(
-          "Direct paste handler: Paste event detected on editor element"
-        );
-
-        // Check for files in the clipboard
-        if (
-          clipboardEvent.clipboardData?.files &&
-          clipboardEvent.clipboardData.files.length > 0
-        ) {
-          for (let i = 0; i < clipboardEvent.clipboardData.files.length; i++) {
-            const file = clipboardEvent.clipboardData.files[i];
-            console.log(
-              `Direct paste handler: File ${i} - type: ${file.type}, name: ${file.name}`
-            );
-
-            if (file.type.indexOf("image") !== -1) {
-              console.log(
-                "Direct paste handler: Found image file, processing..."
-              );
-              clipboardEvent.preventDefault();
-              clipboardEvent.stopPropagation();
-
-              try {
-                const imageData = await handleImageUpload(file);
-                console.log(
-                  "Direct paste handler: Image uploaded successfully",
-                  imageData
-                );
-
-                insertImage({
-                  src: imageData.secure_url,
-                  alt: "Pasted image",
-                  sizes: {
-                    width: imageData.width || 800,
-                    height: imageData.height || 600,
-                  },
-                });
-              } catch (error) {
-                console.error(
-                  "Direct paste handler: Failed to process image",
-                  error
-                );
-              }
-
-              break;
-            }
-          }
-        } else {
-          console.log("Direct paste handler: No files found in clipboard");
-
-          // Log clipboard data for debugging
-          console.log(
-            "Direct paste handler: Clipboard data details:",
-            clipboardEvent.clipboardData
-          );
-
-          // Check if there's any HTML content that might contain an image
-          const html = clipboardEvent.clipboardData?.getData("text/html");
-          if (html) {
-            console.log(
-              "Direct paste handler: Found HTML content in clipboard",
-              html
-            );
-
-            // Check if HTML contains an img tag
-            const imgRegex = /<img[^>]+src="([^"]+)"/i;
-            const match = html.match(imgRegex);
-
-            if (match && match[1]) {
-              const imgSrc = match[1];
-              console.log(
-                "Direct paste handler: Found image in HTML content",
-                imgSrc
-              );
-
-              try {
-                // Create a placeholder image with the src from clipboard
-                insertImage({
-                  src: imgSrc,
-                  alt: "Pasted image",
-                  sizes: {
-                    width: 800,
-                    height: 600,
-                  },
-                });
-              } catch (error) {
-                console.error(
-                  "Direct paste handler: Failed to insert HTML image",
-                  error
-                );
-              }
-            }
-          } else {
-            console.log(
-              "Direct paste handler: No HTML content found in clipboard"
-            );
-          }
-        }
-      };
-
-      editorElement.addEventListener(
-        "paste",
-        handleDirectPaste as EventListener
-      );
-
-      return () => {
-        editorElement.removeEventListener(
-          "paste",
-          handleDirectPaste as EventListener
-        );
-        console.log(
-          "Direct paste handler: Removed paste event listener from editor element"
-        );
-      };
-    }, 1500); // Wait 1 second for the editor to be fully mounted
-
-    // Cleanup function
-    return () => {};
-  }, [handleImageUpload, insertImage]);
-
   const onChange = (
     newValue: YooptaContentValue,
     options: YooptaOnChangeOptions
   ) => {
+    console.log("onChange", JSON.stringify(options));
+    const lastOperation = options.operations[options.operations.length - 1];
+    console.log("Last operation:");
+    if (
+      lastOperation.type === "insert_block" ||
+      lastOperation.type === "set_block_value"
+    ) {
+      //@ts-ignore
+      setCurrentBlockId(lastOperation.block.id);
+      //@ts-ignore
+      setCurrentOrder(lastOperation.block.meta.order);
+    }
+    // if (lastOperation && lastOperation.block) {
+    //   setCurrentBlockId(lastOperation.block.id);
+    // }
+    // const lastBlockId = lastOperation?.block?.id;
+    // console.log("Last block ID:", lastBlockId);
+
     setValue(newValue);
   };
 
